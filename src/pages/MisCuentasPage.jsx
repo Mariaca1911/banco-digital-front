@@ -1,31 +1,73 @@
-import { useState } from 'react';
-import { cuentaService } from '../api/services';
+import { useState, useEffect } from 'react';
+import { clienteService, cuentaService } from '../api/services';
+import { useAuth } from '../context/AuthContext';
 import Layout from '../components/Layout';
 
 function formatCOP(amount) {
-  return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(amount);
+  if (amount == null) return '—';
+  return new Intl.NumberFormat('es-CO', {
+    style: 'currency',
+    currency: 'COP',
+    minimumFractionDigits: 0,
+  }).format(amount);
 }
 
 export default function MisCuentasPage() {
-  const [cuentaId, setCuentaId] = useState('');
-  const [saldo, setSaldo] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const { user } = useAuth();
+  const clienteId = user?.clienteId;
 
-  const handleConsultar = async (e) => {
-    e.preventDefault();
-    if (!cuentaId.trim()) return;
+  const [cuentas, setCuentas]       = useState([]);
+  const [loading, setLoading]       = useState(true);
+  const [error, setError]           = useState('');
+
+  // Saldo individual
+  const [saldos, setSaldos]         = useState({});
+  const [saldoLoading, setSaldoLoading] = useState({});
+
+  useEffect(() => {
+    if (clienteId) {
+      cargarCuentas();
+    } else {
+      setError('No se encontró el ID de cliente en tu sesión.');
+      setLoading(false);
+    }
+  }, [clienteId]);
+
+  const cargarCuentas = async () => {
     setLoading(true);
     setError('');
-    setSaldo(null);
     try {
-      const res = await cuentaService.consultarSaldo(cuentaId.trim());
-      setSaldo(res.data?.saldo ?? res.saldo);
+      const res = await clienteService.listarCuentas(clienteId);
+      // ApiResponse: { success, data: [ CuentaResponseDto ] }
+      setCuentas(res.data || res || []);
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
+  };
+
+  const consultarSaldo = async (cuentaId) => {
+    setSaldoLoading((prev) => ({ ...prev, [cuentaId]: true }));
+    try {
+      const res = await cuentaService.consultarSaldo(cuentaId);
+      // ApiResponse: { success, data: { saldo } }
+      const saldo = res.data?.saldo ?? res.saldo;
+      setSaldos((prev) => ({ ...prev, [cuentaId]: saldo }));
+    } catch (err) {
+      setSaldos((prev) => ({ ...prev, [cuentaId]: 'Error' }));
+    } finally {
+      setSaldoLoading((prev) => ({ ...prev, [cuentaId]: false }));
+    }
+  };
+
+  const estadoTag = (estado) => {
+    const map = {
+      ACTIVA:   'tag-green',
+      INACTIVA: 'tag-red',
+      BLOQUEADA:'tag-red',
+    };
+    return map[estado] || 'tag-blue';
   };
 
   return (
@@ -35,50 +77,70 @@ export default function MisCuentasPage() {
           <h1>Mis Cuentas</h1>
           <span className="badge-role cliente">Cliente</span>
         </div>
-        <p>Consulta el saldo de tus cuentas</p>
+        <p>Consulta el saldo y el detalle de tus cuentas</p>
       </div>
 
-      <div className="card" style={{ maxWidth: 540, marginBottom: 24 }}>
-        <h2 className="section-title">Consultar Saldo</h2>
-        <form onSubmit={handleConsultar} style={{ display: 'flex', gap: 12 }}>
-          <input
-            className="form-input"
-            placeholder="ID de la cuenta (UUID)..."
-            value={cuentaId}
-            onChange={e => { setCuentaId(e.target.value); setError(''); setSaldo(null); }}
-          />
-          <button type="submit" className="btn btn-primary" disabled={loading}>
-            {loading ? <span className="spinner" /> : 'Consultar'}
-          </button>
-        </form>
-
-        {error && <div className="alert alert-error" style={{ marginTop: 16 }}>⚠ {error}</div>}
-
-        {saldo !== null && (
-          <div style={{
-            marginTop: 24,
-            padding: '24px',
-            background: 'var(--ink)',
-            borderRadius: 'var(--radius)',
-            textAlign: 'center',
-          }}>
-            <div style={{ fontSize: '0.7rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.5)', marginBottom: 8 }}>
-              Saldo disponible
-            </div>
-            <div style={{ fontFamily: 'var(--font-display)', fontSize: '2.4rem', fontWeight: 700, color: 'var(--gold-light)' }}>
-              {formatCOP(saldo)}
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div className="card">
-        <div className="empty-state">
-          <div className="empty-state-icon">💳</div>
-          <h3>Consulta el saldo de tu cuenta</h3>
-          <p>Ingresa el ID de tu cuenta para ver el saldo disponible en tiempo real.</p>
+      {loading && (
+        <div className="loading-center">
+          <span className="spinner" /> Cargando cuentas...
         </div>
-      </div>
+      )}
+
+      {error && (
+        <div className="alert alert-error">⚠ {error}</div>
+      )}
+
+      {!loading && !error && cuentas.length === 0 && (
+        <div className="card">
+          <div className="empty-state">
+            <div className="empty-state-icon">💳</div>
+            <h3>No tienes cuentas registradas</h3>
+            <p>Comunícate con un asesor para abrir tu primera cuenta.</p>
+          </div>
+        </div>
+      )}
+
+      {!loading && cuentas.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {cuentas.map((cuenta) => (
+            <div className="card" key={cuenta.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+                  <span style={{ fontFamily: 'var(--font-display)', fontSize: '1.1rem', fontWeight: 600 }}>
+                    {cuenta.numeroCuenta}
+                  </span>
+                  <span className={`tag ${estadoTag(cuenta.estado)}`}>{cuenta.estado}</span>
+                  <span className="tag tag-blue">{cuenta.tipoCuenta}</span>
+                </div>
+                <div style={{ color: 'var(--ink-muted)', fontSize: '0.82rem' }}>
+                  Abierta: {cuenta.fechaApertura || '—'}
+                </div>
+              </div>
+
+              <div style={{ textAlign: 'right' }}>
+                {saldos[cuenta.id] !== undefined ? (
+                  <div>
+                    <div style={{ fontSize: '0.7rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink-muted)', marginBottom: 4 }}>
+                      Saldo disponible
+                    </div>
+                    <div style={{ fontFamily: 'var(--font-display)', fontSize: '1.6rem', fontWeight: 700, color: saldos[cuenta.id] === 'Error' ? 'var(--red)' : 'var(--ink)' }}>
+                      {saldos[cuenta.id] === 'Error' ? 'Error al consultar' : formatCOP(saldos[cuenta.id])}
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    className="btn btn-outline btn-sm"
+                    onClick={() => consultarSaldo(cuenta.id)}
+                    disabled={saldoLoading[cuenta.id]}
+                  >
+                    {saldoLoading[cuenta.id] ? <><span className="spinner" /> Consultando...</> : '↻ Ver saldo'}
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </Layout>
   );
 }

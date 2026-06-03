@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { clienteService } from '../api/services';
+import { clienteService, adminService } from '../api/services';
 import Layout from '../components/Layout';
 
 export default function RegistroClientePage() {
@@ -15,7 +15,7 @@ export default function RegistroClientePage() {
     telefono: '',
     fechaNacimiento: '',
   });
-  const [error, setError] = useState('');
+  const [error, setError]     = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -30,14 +30,26 @@ export default function RegistroClientePage() {
     setError('');
     setSuccess('');
     try {
+      // Limpiar campos vacíos opcionales
       const payload = { ...form };
-      if (!payload.segundoNombre) delete payload.segundoNombre;
+      if (!payload.segundoNombre)  delete payload.segundoNombre;
       if (!payload.segundoApellido) delete payload.segundoApellido;
-      if (!payload.telefono) delete payload.telefono;
+      if (!payload.telefono)       delete payload.telefono;
 
+      // 1. Crear cliente → { success, data: { id, email, ... } }
       const res = await clienteService.crear(payload);
-      const clienteId = res.data?.id;
-      setSuccess(`Cliente registrado exitosamente.`);
+      const cliente = res.data || res;
+      const clienteId = cliente.id;
+
+      // 2. Provisionar acceso (crear usuario en Identity)
+      //    Puede fallar si ya existe; no bloqueamos el flujo
+      try {
+        await adminService.provisionarAcceso(clienteId, payload.email);
+      } catch (_) {
+        // La provisión falló pero el cliente ya fue creado
+      }
+
+      setSuccess(`Cliente registrado exitosamente. Redirigiendo...`);
       setTimeout(() => navigate(`/clientes/${clienteId}`), 1500);
     } catch (err) {
       setError(err.message || 'Error al registrar cliente');
@@ -55,50 +67,51 @@ export default function RegistroClientePage() {
 
       <div className="card" style={{ maxWidth: 720 }}>
         <form onSubmit={handleSubmit}>
-          {error && <div className="alert alert-error" style={{ marginBottom: 24 }}>⚠ {error}</div>}
+          {error   && <div className="alert alert-error"   style={{ marginBottom: 24 }}>⚠ {error}</div>}
           {success && <div className="alert alert-success" style={{ marginBottom: 24 }}>✓ {success}</div>}
 
           <h3 className="section-title">Identificación</h3>
           <div className="form-grid form-grid-2" style={{ marginBottom: 28 }}>
             <div className="form-group">
               <label className="form-label">Número de cédula *</label>
-              <input className="form-input" name="numeroCedula" value={form.numeroCedula} onChange={handleChange} placeholder="1234567890" required />
+              <input className="form-input" name="numeroCedula" value={form.numeroCedula}
+                onChange={handleChange} placeholder="1234567890" required />
             </div>
             <div className="form-group">
               <label className="form-label">Fecha de nacimiento *</label>
-              <input className="form-input" type="date" name="fechaNacimiento" value={form.fechaNacimiento} onChange={handleChange} required />
+              <input className="form-input" type="date" name="fechaNacimiento"
+                value={form.fechaNacimiento} onChange={handleChange} required />
             </div>
           </div>
 
           <h3 className="section-title">Nombre completo</h3>
           <div className="form-grid form-grid-2" style={{ marginBottom: 28 }}>
-            <div className="form-group">
-              <label className="form-label">Primer nombre *</label>
-              <input className="form-input" name="primerNombre" value={form.primerNombre} onChange={handleChange} placeholder="Juan" required />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Segundo nombre</label>
-              <input className="form-input" name="segundoNombre" value={form.segundoNombre} onChange={handleChange} placeholder="Carlos" />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Primer apellido *</label>
-              <input className="form-input" name="primerApellido" value={form.primerApellido} onChange={handleChange} placeholder="García" required />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Segundo apellido</label>
-              <input className="form-input" name="segundoApellido" value={form.segundoApellido} onChange={handleChange} placeholder="López" />
-            </div>
+            {[
+              ['primerNombre',    'Primer nombre *',   true,  'Juan'],
+              ['segundoNombre',   'Segundo nombre',    false, 'Carlos'],
+              ['primerApellido',  'Primer apellido *', true,  'García'],
+              ['segundoApellido', 'Segundo apellido',  false, 'López'],
+            ].map(([name, label, required, placeholder]) => (
+              <div className="form-group" key={name}>
+                <label className="form-label">{label}</label>
+                <input className="form-input" name={name} value={form[name]}
+                  onChange={handleChange} placeholder={placeholder}
+                  required={required} />
+              </div>
+            ))}
           </div>
 
           <h3 className="section-title">Contacto</h3>
           <div className="form-grid form-grid-2" style={{ marginBottom: 32 }}>
             <div className="form-group">
               <label className="form-label">Correo electrónico *</label>
-              <input className="form-input" type="email" name="email" value={form.email} onChange={handleChange} placeholder="juan@email.com" required />
+              <input className="form-input" type="email" name="email" value={form.email}
+                onChange={handleChange} placeholder="juan@email.com" required />
             </div>
             <div className="form-group">
               <label className="form-label">Teléfono</label>
-              <input className="form-input" type="tel" name="telefono" value={form.telefono} onChange={handleChange} placeholder="3001234567" />
+              <input className="form-input" type="tel" name="telefono" value={form.telefono}
+                onChange={handleChange} placeholder="3001234567" />
             </div>
           </div>
 

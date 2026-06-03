@@ -1,28 +1,39 @@
 import { useState, useEffect } from 'react';
-import { clienteService } from '../api/services';
+import { clienteService, authService } from '../api/services';
 import { useAuth } from '../context/AuthContext';
 import Layout from '../components/Layout';
 
 function formatDate(str) {
   if (!str) return '—';
-  return new Date(str).toLocaleDateString('es-CO', { year: 'numeric', month: 'long', day: 'numeric' });
+  return new Date(str).toLocaleDateString('es-CO', {
+    year: 'numeric', month: 'long', day: 'numeric',
+  });
 }
 
 export default function MiPerfilPage() {
   const { user } = useAuth();
   const clienteId = user?.clienteId;
 
-  const [cliente, setCliente] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [editMode, setEditMode] = useState(false);
-  const [editForm, setEditForm] = useState({});
+  const [cliente, setCliente]   = useState(null);
+  const [loading, setLoading]   = useState(true);
+  const [error, setError]       = useState('');
+
+  // Edición de perfil
+  const [editMode, setEditMode]     = useState(false);
+  const [editForm, setEditForm]     = useState({});
   const [editLoading, setEditLoading] = useState(false);
-  const [editMsg, setEditMsg] = useState({ type: '', text: '' });
+  const [editMsg, setEditMsg]       = useState({ type: '', text: '' });
+
+  // Cambio de contraseña
+  const [showPwd, setShowPwd]       = useState(false);
+  const [pwdForm, setPwdForm]       = useState({ passwordActual: '', passwordNueva: '', passwordConfirmacion: '' });
+  const [pwdLoading, setPwdLoading] = useState(false);
+  const [pwdMsg, setPwdMsg]         = useState({ type: '', text: '' });
 
   useEffect(() => {
-    if (clienteId) loadCliente();
-    else {
+    if (clienteId) {
+      loadCliente();
+    } else {
       setError('No se encontró el ID de cliente en tu sesión.');
       setLoading(false);
     }
@@ -43,12 +54,12 @@ export default function MiPerfilPage() {
 
   const startEdit = () => {
     setEditForm({
-      primerNombre: cliente.primerNombre,
-      segundoNombre: cliente.segundoNombre || '',
-      primerApellido: cliente.primerApellido,
+      primerNombre:    cliente.primerNombre,
+      segundoNombre:   cliente.segundoNombre   || '',
+      primerApellido:  cliente.primerApellido,
       segundoApellido: cliente.segundoApellido || '',
-      email: cliente.email,
-      telefono: cliente.telefono || '',
+      email:           cliente.email,
+      telefono:        cliente.telefono        || '',
     });
     setEditMode(true);
     setEditMsg({ type: '', text: '' });
@@ -70,11 +81,36 @@ export default function MiPerfilPage() {
     }
   };
 
+  const handlePwdSubmit = async (e) => {
+    e.preventDefault();
+    if (pwdForm.passwordNueva !== pwdForm.passwordConfirmacion) {
+      setPwdMsg({ type: 'error', text: 'Las nuevas contraseñas no coinciden' });
+      return;
+    }
+    setPwdLoading(true);
+    setPwdMsg({ type: '', text: '' });
+    try {
+      await authService.changePassword(
+        pwdForm.passwordActual,
+        pwdForm.passwordNueva,
+        pwdForm.passwordConfirmacion,
+      );
+      setPwdMsg({ type: 'success', text: 'Contraseña actualizada exitosamente' });
+      setPwdForm({ passwordActual: '', passwordNueva: '', passwordConfirmacion: '' });
+      setShowPwd(false);
+    } catch (err) {
+      setPwdMsg({ type: 'error', text: err.message });
+    } finally {
+      setPwdLoading(false);
+    }
+  };
+
   if (loading) return <Layout><div className="loading-center"><span className="spinner" /> Cargando perfil...</div></Layout>;
-  if (error) return <Layout><div className="alert alert-error">⚠ {error}</div></Layout>;
+  if (error)   return <Layout><div className="alert alert-error">⚠ {error}</div></Layout>;
   if (!cliente) return null;
 
-  const fullName = [cliente.primerNombre, cliente.segundoNombre, cliente.primerApellido, cliente.segundoApellido].filter(Boolean).join(' ');
+  const fullName = [cliente.primerNombre, cliente.segundoNombre, cliente.primerApellido, cliente.segundoApellido]
+    .filter(Boolean).join(' ');
 
   return (
     <Layout>
@@ -93,8 +129,13 @@ export default function MiPerfilPage() {
           {editMsg.type === 'success' ? '✓' : '⚠'} {editMsg.text}
         </div>
       )}
+      {pwdMsg.text && (
+        <div className={`alert ${pwdMsg.type === 'success' ? 'alert-success' : 'alert-error'}`} style={{ marginBottom: 20 }}>
+          {pwdMsg.type === 'success' ? '✓' : '⚠'} {pwdMsg.text}
+        </div>
+      )}
 
-      <div className="card" style={{ maxWidth: 720 }}>
+      <div className="card" style={{ maxWidth: 720, marginBottom: 24 }}>
         {!editMode ? (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 }}>
@@ -107,10 +148,10 @@ export default function MiPerfilPage() {
             <hr className="divider" />
             <div className="form-grid form-grid-2">
               {[
-                ['Cédula', cliente.numeroCedula],
-                ['Teléfono', cliente.telefono || '—'],
+                ['Cédula',              cliente.numeroCedula],
+                ['Teléfono',            cliente.telefono || '—'],
                 ['Fecha de nacimiento', formatDate(cliente.fechaNacimiento)],
-                ['Miembro desde', formatDate(cliente.createdAt)],
+                ['Miembro desde',       formatDate(cliente.createdAt)],
               ].map(([label, val]) => (
                 <div key={label}>
                   <div className="form-label" style={{ marginBottom: 4 }}>{label}</div>
@@ -124,12 +165,12 @@ export default function MiPerfilPage() {
             <h2 className="section-title">Editar Perfil</h2>
             <div className="form-grid form-grid-2" style={{ marginBottom: 24 }}>
               {[
-                ['primerNombre', 'Primer nombre', 'text'],
-                ['segundoNombre', 'Segundo nombre', 'text'],
-                ['primerApellido', 'Primer apellido', 'text'],
-                ['segundoApellido', 'Segundo apellido', 'text'],
-                ['email', 'Correo electrónico', 'email'],
-                ['telefono', 'Teléfono', 'tel'],
+                ['primerNombre',    'Primer nombre',       'text'],
+                ['segundoNombre',   'Segundo nombre',      'text'],
+                ['primerApellido',  'Primer apellido',     'text'],
+                ['segundoApellido', 'Segundo apellido',    'text'],
+                ['email',           'Correo electrónico',  'email'],
+                ['telefono',        'Teléfono',            'tel'],
               ].map(([name, label, type]) => (
                 <div className="form-group" key={name}>
                   <label className="form-label">{label}</label>
@@ -143,6 +184,45 @@ export default function MiPerfilPage() {
                 {editLoading ? <><span className="spinner" /> Guardando...</> : 'Guardar cambios'}
               </button>
               <button type="button" className="btn btn-outline" onClick={() => setEditMode(false)}>Cancelar</button>
+            </div>
+          </form>
+        )}
+      </div>
+
+      {/* Cambio de contraseña */}
+      <div className="card" style={{ maxWidth: 720 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h2 className="section-title" style={{ marginBottom: 0, borderBottom: 'none', paddingBottom: 0 }}>
+            Seguridad
+          </h2>
+          <button className="btn btn-outline btn-sm" onClick={() => { setShowPwd(!showPwd); setPwdMsg({ type: '', text: '' }); }}>
+            {showPwd ? 'Cancelar' : 'Cambiar contraseña'}
+          </button>
+        </div>
+
+        {showPwd && (
+          <form onSubmit={handlePwdSubmit} style={{ marginTop: 24 }}>
+            <div className="form-stack" style={{ maxWidth: 400 }}>
+              {[
+                ['passwordActual',       'Contraseña actual',           'current-password'],
+                ['passwordNueva',        'Nueva contraseña',            'new-password'],
+                ['passwordConfirmacion', 'Confirmar nueva contraseña',  'new-password'],
+              ].map(([name, label, autoComplete]) => (
+                <div className="form-group" key={name}>
+                  <label className="form-label">{label}</label>
+                  <input
+                    className="form-input"
+                    type="password"
+                    autoComplete={autoComplete}
+                    value={pwdForm[name]}
+                    onChange={e => setPwdForm(f => ({ ...f, [name]: e.target.value }))}
+                    required
+                  />
+                </div>
+              ))}
+              <button type="submit" className="btn btn-primary" disabled={pwdLoading}>
+                {pwdLoading ? <><span className="spinner" /> Cambiando...</> : 'Cambiar contraseña'}
+              </button>
             </div>
           </form>
         )}
