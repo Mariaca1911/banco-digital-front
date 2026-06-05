@@ -11,7 +11,6 @@ import {
 const DEMO_MODE = import.meta.env.VITE_DEMO_MODE === 'true';
 const BASE_URL  = import.meta.env.VITE_API_BASE_URL || '';
 
-// ─── JWT falso ────────────────────────────────────────────────
 function makeToken(user) {
   const payload = {
     sub:       user.sub,
@@ -25,7 +24,6 @@ function makeToken(user) {
   return `${h}.${p}.demo`;
 }
 
-// ─── Mock ─────────────────────────────────────────────────────
 function mockRequest(path, options = {}) {
   const method = options.method || 'GET';
   const body   = options.body ? JSON.parse(options.body) : {};
@@ -74,19 +72,27 @@ function mockRequest(path, options = {}) {
       // ── CUENTAS ───────────────────────────────────────────────
       if (path === '/api/v1/cuentas' && method === 'POST') {
         const nueva = {
-          id:           'acc-' + Date.now(),
-          numeroCuenta: 'CTA-' + Date.now().toString().slice(-6),
-          clienteId:    body.clienteId,
-          tipoCuenta:   body.tipoCuenta,
-          saldo:        0,
-          estado:       'ACTIVA',
+          id:            'acc-' + Date.now(),
+          numeroCuenta:  'CTA-' + Date.now().toString().slice(-6),
+          clienteId:     body.clienteId,
+          tipoCuenta:    body.tipoCuenta,
+          saldo:         0,
+          estado:        'ACTIVA',
           fechaApertura: new Date().toISOString().split('T')[0],
         };
         return resolve({ success: true, data: nueva });
       }
 
-      if (path.match(/\/api\/v1\/cuentas\/[^/]+\/saldo/)) {
-        return resolve({ success: true, data: { saldo: 1500000 } });
+      // ── SALDO (busca en MOCK_CUENTAS por ID) ──────────────────
+      const saldoMatch = path.match(/^\/api\/v1\/cuentas\/([^/]+)\/saldo$/);
+      if (saldoMatch) {
+        const cuentaId = saldoMatch[1];
+        let saldo = 0;
+        for (const cuentas of Object.values(MOCK_CUENTAS)) {
+          const cuenta = cuentas.find(c => c.id === cuentaId);
+          if (cuenta) { saldo = cuenta.saldo; break; }
+        }
+        return resolve({ success: true, data: { saldo } });
       }
 
       // ── TRANSACCIONES ─────────────────────────────────────────
@@ -94,7 +100,7 @@ function mockRequest(path, options = {}) {
         return resolve({ success: true, data: { id: 'tx-' + Date.now(), tipo: 'RETIRO', monto: body.monto } });
       }
 
-      if (path.match(/\/api\/v1\/transacciones\/historial\//)) {
+      if (path.match(/^\/api\/v1\/transacciones\/historial\//)) {
         return resolve({ success: true, data: MOCK_HISTORIAL });
       }
 
@@ -189,8 +195,8 @@ async function request(path, options = {}) {
 }
 
 export const api = {
-  get:    (path)        => request(path),
-  post:   (path, body)  => request(path, { method: 'POST',  body: JSON.stringify(body) }),
-  patch:  (path, body)  => request(path, { method: 'PATCH', body: JSON.stringify(body) }),
-  delete: (path)        => request(path, { method: 'DELETE' }),
+  get:    (path)       => request(path),
+  post:   (path, body) => request(path, { method: 'POST',  body: JSON.stringify(body) }),
+  patch:  (path, body) => request(path, { method: 'PATCH', body: JSON.stringify(body) }),
+  delete: (path)       => request(path, { method: 'DELETE' }),
 };
