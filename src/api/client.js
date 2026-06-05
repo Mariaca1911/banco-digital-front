@@ -1,16 +1,24 @@
-import { MOCK_USERS, MOCK_CLIENTES, MOCK_HISTORIAL, MOCK_REPORTE } from './mockData.js';
+import {
+  MOCK_USERS,
+  MOCK_CLIENTES,
+  MOCK_CUENTAS,
+  MOCK_HISTORIAL,
+  MOCK_REPORTE,
+  MOCK_MOVIMIENTOS,
+  MOCK_RESUMEN,
+} from './mockData.js';
 
 const DEMO_MODE = import.meta.env.VITE_DEMO_MODE === 'true';
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
+const BASE_URL  = import.meta.env.VITE_API_BASE_URL || '';
 
 // ─── JWT falso ────────────────────────────────────────────────
 function makeToken(user) {
   const payload = {
-    sub: user.sub,
-    roles: user.roles,
+    sub:       user.sub,
+    roles:     user.roles,
     clienteId: user.clienteId,
-    uid: user.uid,
-    exp: Math.floor(Date.now() / 1000) + 3600,
+    uid:       user.uid,
+    exp:       Math.floor(Date.now() / 1000) + 3600,
   };
   const h = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
   const p = btoa(JSON.stringify(payload));
@@ -20,14 +28,14 @@ function makeToken(user) {
 // ─── Mock ─────────────────────────────────────────────────────
 function mockRequest(path, options = {}) {
   const method = options.method || 'GET';
-  const body = options.body ? JSON.parse(options.body) : {};
+  const body   = options.body ? JSON.parse(options.body) : {};
 
   return new Promise((resolve, reject) => {
     setTimeout(() => {
 
-      // LOGIN
+      // ── AUTH ──────────────────────────────────────────────────
       if (path === '/api/v1/auth/login') {
-        const user = MOCK_USERS[body.correo];
+        const user      = MOCK_USERS[body.correo];
         const validPass = body.clave === 'Admin123!' || body.clave === 'Temp1234!';
         if (user && validPass) {
           return resolve({ token: makeToken(user), refreshToken: 'mock-refresh' });
@@ -35,79 +43,94 @@ function mockRequest(path, options = {}) {
         return reject(new Error('Credenciales inválidas. Usa Admin123! o Temp1234!'));
       }
 
-      // LOGOUT
-      if (path === '/api/v1/auth/logout') return resolve(null);
+      if (path === '/api/v1/auth/logout')          return resolve(null);
+      if (path === '/api/v1/auth/me')              return resolve({ userId: 'mock', username: 'demo' });
+      if (path === '/api/v1/auth/change-password') return resolve({ success: true, message: 'Contraseña actualizada (demo)' });
 
-      // ME
-      if (path === '/api/v1/auth/me') return resolve({ userId: 'mock', username: 'demo' });
-
-      // CLIENTES - Crear
+      // ── CLIENTES ──────────────────────────────────────────────
       if (path === '/api/v1/clientes' && method === 'POST') {
         const id = 'c1a2b3c4-' + Date.now();
-        return resolve({ data: { id, ...body, activo: true, createdAt: new Date().toISOString() } });
+        return resolve({ success: true, data: { id, ...body, activo: true, createdAt: new Date().toISOString() } });
       }
 
-      // CLIENTES - Obtener
-      const clienteGet = path.match(/^\/api\/v1\/clientes\/([^/]+)$/);
-      if (clienteGet && method === 'GET') {
-        const mock = Object.values(MOCK_CLIENTES)[0];
-        return resolve({ data: { ...mock, id: clienteGet[1] } });
+      const clienteMatch = path.match(/^\/api\/v1\/clientes\/([^/]+)$/);
+      if (clienteMatch && method === 'GET') {
+        const mock = MOCK_CLIENTES[clienteMatch[1]] || Object.values(MOCK_CLIENTES)[0];
+        return resolve({ success: true, data: { ...mock, id: clienteMatch[1] } });
+      }
+      if (clienteMatch && method === 'PATCH') {
+        const mock = MOCK_CLIENTES[clienteMatch[1]] || Object.values(MOCK_CLIENTES)[0];
+        return resolve({ success: true, data: { ...mock, ...body, id: clienteMatch[1] } });
       }
 
-      // CLIENTES - Actualizar
-      if (clienteGet && method === 'PATCH') {
-        const mock = Object.values(MOCK_CLIENTES)[0];
-        return resolve({ data: { ...mock, ...body, id: clienteGet[1] } });
+      // ── CUENTAS POR CLIENTE ───────────────────────────────────
+      const cuentasPorCliente = path.match(/^\/api\/v1\/clientes\/([^/]+)\/cuentas$/);
+      if (cuentasPorCliente && method === 'GET') {
+        const clienteId = cuentasPorCliente[1];
+        const cuentas   = MOCK_CUENTAS[clienteId] || [];
+        return resolve({ success: true, data: cuentas });
       }
 
-      // CUENTAS - Crear
+      // ── CUENTAS ───────────────────────────────────────────────
       if (path === '/api/v1/cuentas' && method === 'POST') {
-        return resolve({ data: {
-          id: 'acc-' + Date.now(),
-          numeroCuenta: '001-00' + Date.now().toString().slice(-6),
-          ...body, saldo: 0, estado: 'ACTIVA',
+        const nueva = {
+          id:           'acc-' + Date.now(),
+          numeroCuenta: 'CTA-' + Date.now().toString().slice(-6),
+          clienteId:    body.clienteId,
+          tipoCuenta:   body.tipoCuenta,
+          saldo:        0,
+          estado:       'ACTIVA',
           fechaApertura: new Date().toISOString().split('T')[0],
-        }});
+        };
+        return resolve({ success: true, data: nueva });
       }
 
-      // CUENTAS - Saldo
       if (path.match(/\/api\/v1\/cuentas\/[^/]+\/saldo/)) {
-        return resolve({ data: { saldo: 1500000 } });
+        return resolve({ success: true, data: { saldo: 1500000 } });
       }
 
-      // TRANSACCIONES - Retiro
+      // ── TRANSACCIONES ─────────────────────────────────────────
       if (path === '/api/v1/transacciones/retiro' && method === 'POST') {
-        return resolve({ data: { id: 'tx-' + Date.now(), tipo: 'RETIRO', monto: body.monto } });
+        return resolve({ success: true, data: { id: 'tx-' + Date.now(), tipo: 'RETIRO', monto: body.monto } });
       }
 
-      // TRANSACCIONES - Historial
       if (path.match(/\/api\/v1\/transacciones\/historial\//)) {
-        return resolve({ data: MOCK_HISTORIAL });
+        return resolve({ success: true, data: MOCK_HISTORIAL });
       }
 
-      // TRANSFERENCIAS
+      // ── TRANSFERENCIAS ────────────────────────────────────────
       if (path === '/api/v1/transferencias' && method === 'POST') {
-        return resolve({ data: {
+        return resolve({ success: true, data: {
           transaccionId: 'tx-' + Date.now(),
-          referencia: 'REF-' + Date.now(),
-          estado: 'COMPLETADA',
-          monto: body.monto,
+          referencia:    'REF-' + Date.now(),
+          estado:        'COMPLETADA',
+          monto:         body.monto,
         }});
       }
 
-      // REPORTES - Actividad
+      // ── REPORTES ──────────────────────────────────────────────
       if (path.startsWith('/api/v1/reportes/actividad')) {
-        return resolve({ data: MOCK_REPORTE });
+        return resolve({ success: true, data: MOCK_REPORTE });
       }
-
-      // REPORTES - Saldo total
       if (path === '/api/v1/reportes/saldo-total') {
-        return resolve({ data: { saldoTotal: 1500000 } });
+        return resolve({ success: true, data: { clienteId: 'mock', saldoTotal: 2000000 } });
+      }
+      if (path.startsWith('/api/v1/reportes/movimientos')) {
+        return resolve({ success: true, data: MOCK_MOVIMIENTOS });
+      }
+      if (path === '/api/v1/reportes/cuentas') {
+        return resolve({ success: true, data: [
+          { cuentaId: 'acc-001', numeroCuenta: 'CTA-001-2026', tipoCuenta: 'AHORROS',   estado: 'ACTIVA', saldoActual: 1500000 },
+          { cuentaId: 'acc-002', numeroCuenta: 'CTA-002-2026', tipoCuenta: 'CORRIENTE', estado: 'ACTIVA', saldoActual: 500000  },
+        ]});
+      }
+      if (path === '/api/v1/reportes/resumen-movimientos') {
+        return resolve({ success: true, data: MOCK_RESUMEN });
       }
 
-      // Provision
+      // ── PROVISIÓN ─────────────────────────────────────────────
       if (path.includes('/provision-client-access')) {
-        return resolve({ data: { mensaje: 'Acceso provisionado (demo)' } });
+        return resolve({ success: true, data: { mensaje: 'Acceso provisionado (demo)' } });
       }
 
       reject(new Error(`Sin mock para: ${method} ${path}`));
@@ -123,7 +146,7 @@ function getToken() {
 async function request(path, options = {}) {
   if (DEMO_MODE) return mockRequest(path, options);
 
-  const token = getToken();
+  const token   = getToken();
   const headers = {
     'Content-Type': 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -166,8 +189,8 @@ async function request(path, options = {}) {
 }
 
 export const api = {
-  get: (path) => request(path),
-  post: (path, body) => request(path, { method: 'POST', body: JSON.stringify(body) }),
-  patch: (path, body) => request(path, { method: 'PATCH', body: JSON.stringify(body) }),
-  delete: (path) => request(path, { method: 'DELETE' }),
+  get:    (path)        => request(path),
+  post:   (path, body)  => request(path, { method: 'POST',  body: JSON.stringify(body) }),
+  patch:  (path, body)  => request(path, { method: 'PATCH', body: JSON.stringify(body) }),
+  delete: (path)        => request(path, { method: 'DELETE' }),
 };

@@ -20,8 +20,11 @@ export default function LoginPage() {
     setError('');
     try {
       const userData = await login(form.correo, form.clave);
-      const roles = userData.roles.map(r => r.replace('ROLE_', ''));
-      if (roles.includes('CLIENTE')) {
+      const roles = userData.roles || [];
+      const esCliente = roles.some(r => 
+        r === 'CLIENTE' || r === 'ROLE_CLIENTE'
+      );
+      if (esCliente) {
         navigate('/mis-cuentas');
       } else {
         navigate('/clientes');
